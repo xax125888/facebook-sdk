@@ -1,0 +1,52 @@
+# This example follows the examples shown in this Google Cloud Community blog post
+# https://medium.com/google-cloud/applying-a-path-pattern-when-filtering-in-eventarc-f06b937b4c34
+# and the docs https://cloud.google.com/eventarc/docs/path-patterns
+
+terraform {
+  required_providers {
+    google = {
+      source  = "hashicorp/google"
+      version = ">= 4.34.0"
+    }
+  }
+}
+
+resource "random_id" "bucket_prefix" {
+  byte_length = 8
+}
+
+resource "google_storage_bucket" "source_bucket" {
+  name                        = "${random_id.bucket_prefix.hex}-gcf-source"
+  location                    = "US"
+  uniform_bucket_level_access = true
+}
+
+data "archive_file" "default" {
+  type        = "zip"
+  output_path = "/tmp/function-source.zip"
+  source_dir  = "function-source/"
+}
+
+resource "google_storage_bucket_object" "default" {
+  name   = "function-source.zip"
+  bucket = google_storage_bucket.source_bucket.name
+  source = data.archive_file.default.output_path # Path to the zipped function source code
+}
+
+resource "google_service_account" "default" {
+  account_id   = "test-gcf-sa"
+  display_name = "Test Service Account - used for both the cloud function and eventarc trigger in the test"
+}
+
+# Note: The right way of listening for Cloud Storage events is to use a Cloud Storage trigger.
+# Here we use Audit Logs to monitor the bucket so path patterns can be used in the example of
+# google_cloudfunctions2_function below (Audit Log events have path pattern support)
+resource "google_storage_bucket" "audit_log_bucket" {
+  name                        = "${random_id.bucket_prefix.hex}-gcf-auditlog-bucket"
+  location                    = "us-central1" # The trigger must be in the same location as the bucket
+  uniform_bucket_level_access = true
+}
+
+# Permissions on the service account used by the function and Eventarc trigger
+data "google_project" "project" {
+}
